@@ -306,7 +306,25 @@ class RPCProxy(object):
     """
         client
     """
-    pass
+    def __init__(self):
+        pass
+
+    def __call__(self, method, *args, **kwargs):
+        """
+            call RPC,
+            return:
+                result
+                or 
+                instance of Error.
+        """
+        raise NotImplementedError()
+        # return InternalError()
+
+    def __getattr__(self, method):
+        """
+            return a callable, which will call RPC.
+        """
+        return lambda *args, **kwargs: self(method, *args, **kwargs)
 
 
 
