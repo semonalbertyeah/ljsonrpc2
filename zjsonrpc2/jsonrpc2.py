@@ -1,5 +1,9 @@
 # -*- coding:utf-8 -*-
 
+"""
+    JSON-RPC2 specific.
+"""
+
 import json
 import traceback
 import uuid
@@ -180,11 +184,14 @@ class Response(object):
         if isinstance(msg, (str, unicode)):
             msg = json.loads(msg)
 
-        msg.pop('jsonrpc', None)    # do not check
+        assert msg.pop('jsonrpc', None) == '2.0'
         return Response(**msg)
 
 
 class JSONRPC2Handler(object):
+    """
+        handle a JSON-RPC2 request.
+    """
     def __init__(self, introspected=True):
         self._methods = {}
         if introspected:
@@ -247,7 +254,7 @@ class JSONRPC2Handler(object):
             input:
                 raw request
             output:
-                raw response or ''
+                raw response or None
         """
         req_id = None
         try:
@@ -267,7 +274,12 @@ class JSONRPC2Handler(object):
                     result = func(**params)
                 else:
                     raise InvalidParams(message="invalid parameter %s, method: %s" % (json.dumps(params), req.method))
-                return self.make_response(req_id, result).encode()
+
+                if req_id is None:
+                    # notification
+                    return None
+                else:
+                    return self.make_response(req_id, result).encode()
             except TypeError, e:
                 # parameters don't match function
                 raise InvalidParams(message="parameter - %s not match %s" % (json.dumps(params), req.method))
@@ -275,9 +287,11 @@ class JSONRPC2Handler(object):
             #     raise InternalError(message="Internal Error.", data={'traceback': traceback.format_exc()})
 
         except Error, e:
+            print 'Error:', str(e)
             return self.make_response(req_id, e).encode()
 
         except Exception, e:
+            print 'Exception:', str(e)
             return self.make_response(
                     req_id,
                     InternalError(message='InternalError', data={'traceback': traceback.format_exc()})
@@ -295,45 +309,6 @@ class JSONRPC2Handler(object):
         return self.handle_one_request(msg)
 
 
-
-# class RPCProxy(object):
-#     """
-#         client
-#     """
-#     def __init__(self):
-#         pass
-
-#     def __call__(self, method, *args, **kwargs):
-#         """
-#             generate an JSON-RPC2 request (raw string message)
-#             return:
-#                 JSON-RPC2 request (raw string)
-#         """
-#         if args:
-#             params = list(args)
-#         elif kwargs:
-#             params = kwargs
-#         else:
-#             params = None
-#         return Request(method, params=params, id=Request.generate_id()).encode()
-
-#     def notify(self, method, *args, **kwargs):
-#         """
-#             generate an JSON-RPC2 notification request (raw string, without id)
-#         """
-#         if args:
-#             params = list(args)
-#         elif kwargs:
-#             params = kwargs
-#         else:
-#             params = None
-#         return Request(method, params=params, id=None).encode()
-
-#     def __getattr__(self, method):
-#         """
-#             return a callable, which will call RPC.
-#         """
-#         return lambda *args, **kwargs: self(method, *args, **kwargs)
 
 
 
