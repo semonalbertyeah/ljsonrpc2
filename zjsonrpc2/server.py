@@ -2,7 +2,7 @@
 
 import zmq
 
-from jsonrpc2 import (
+from .jsonrpc2 import (
     Error, ParseError, InvalidRequest, NotFound,
     InvalidParams, InternalError,
     JSONRPC2Handler,
