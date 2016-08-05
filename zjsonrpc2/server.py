@@ -99,6 +99,15 @@ class Server(object):
             else:
                 print 'timeout'
 
+    def __enter__(self):
+        assert len(self._endpoints) > 0
+        assert not self.closed
+
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
     def __del__(self):
         self.close()
 
@@ -126,7 +135,6 @@ class RPCServer(Server):
 
     def handle_jsonrpc2(self, msg):
         if not Request.is_jsonrpc2_request(msg):
-            print 'not jsonrpc2 request'
             return None
         else:
             result = self.rpc(msg)

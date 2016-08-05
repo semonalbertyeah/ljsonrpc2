@@ -287,11 +287,9 @@ class JSONRPC2Handler(object):
             #     raise InternalError(message="Internal Error.", data={'traceback': traceback.format_exc()})
 
         except Error, e:
-            print 'Error:', str(e)
             return self.make_response(req_id, e).encode()
 
         except Exception, e:
-            print 'Exception:', str(e)
             return self.make_response(
                     req_id,
                     InternalError(message='InternalError', data={'traceback': traceback.format_exc()})
