@@ -10,5 +10,5 @@ from .jsonrpc2 import (
     Request, Response
 )
 
-from .server import RPCServer
+from .server import RPCServer, LBRPCServer
 from .client import RPCClient
