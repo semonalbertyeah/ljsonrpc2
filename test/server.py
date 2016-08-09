@@ -1,15 +1,15 @@
 # -*- coding:utf-8 -*-
 
-import os, sys
+import os, sys, time
 
 module_path = os.path.dirname(os.path.abspath('.'))
 sys.path.append(module_path)
 
-from zjsonrpc2 import RPCServer 
+from zjsonrpc2 import LBRPCServer 
 
 
 def get_server():
-    server = RPCServer('tcp://*:9999', timeout=3000)
+    server = LBRPCServer('tcp://*:9999', timeout=3000)
 
     @server.procedure(name='test')
     def test_func():
@@ -27,5 +27,10 @@ def get_server():
 
 
 if __name__ == '__main__':
-    with get_server() as server:
-        server.run()
+    try:
+        with get_server() as server:
+            server.start()
+            while True:
+                time.sleep(0.5)
+    except KeyboardInterrupt, e:
+        print 'end'
