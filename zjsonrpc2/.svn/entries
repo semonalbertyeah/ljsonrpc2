@@ -1,0 +1,56 @@
+10
+
+dir
+0
+svn://192.168.31.1/vServer/2.9.6_Distributed/vmd/support/util/zjsonrpc2
+svn://192.168.31.1/vServer
+add
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+3fe031ad-743a-4bb6-a716-5e20e0971cad
+
+client.py
+file
+
+
+
+add
+
+__init__.py
+file
+
+
+
+add
+
+jsonrpc2.py
+file
+
+
+
+add
+
+server.py
+file
+
+
+
+add
+

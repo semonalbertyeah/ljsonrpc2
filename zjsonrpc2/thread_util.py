@@ -28,9 +28,9 @@ def threaded(**options):
         def new_func(*args, **kwargs):
 
             t = threading.Thread(
-                target=func,
+                target=func, 
                 name=name,
-                args=args,
+                args=args, 
                 kwargs=kwargs
             )
             t.setDaemon(daemon)

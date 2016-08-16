@@ -285,7 +285,7 @@ class LBServer(object):
 
 
     def close(self):
-        if self._stat != self.STAT_CLOSED:
+        if getattr(self, '_stat', None) != self.STAT_CLOSED:
             self.terminate()
             self._backend.close()
             self._frontend.close()
@@ -327,10 +327,10 @@ class RPCServer(Server):
         zmq(REP) publisher
     """
 
-    def __init__(self, endpoint=None, context=None, timeout=3000):
+    def __init__(self, endpoint=None, context=None, timeout=3000, logger=None):
         super(RPCServer, self).__init__(endpoint, context, timeout)
 
-        self.rpc = JSONRPC2Handler()
+        self.rpc = JSONRPC2Handler(logger=logger)
         self.add_handler(self.handle_jsonrpc2)
 
     def register_function(self, *args, **kwargs):
@@ -348,9 +348,9 @@ class RPCServer(Server):
             return '' if result is None else result
 
 class LBRPCServer(LBServer):
-    def __init__(self, endpoint=None, context=None, timeout=3000, workers=3):
+    def __init__(self, endpoint=None, context=None, timeout=3000, workers=3, logger=None):
         super(LBRPCServer, self).__init__(endpoint, context, timeout, workers)
-        self.rpc = JSONRPC2Handler()
+        self.rpc = JSONRPC2Handler(logger=logger)
         self.add_handler(self.handle_jsonrpc2)
 
     def register_function(self, *args, **kwargs):
@@ -365,4 +365,4 @@ class LBRPCServer(LBServer):
             return None
         else:
             result = self.rpc(msg)
-            return '' if result is None else result
+            return '' if result is None else result # None means notification

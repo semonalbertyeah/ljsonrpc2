@@ -82,6 +82,11 @@ class InternalError(Error):
         super(InternalError, self).__init__(-32603, message, data)
 
 
+# application specified errors
+class InvalidResponse(Error):
+    def __init__(self, message='Invalid Response', data=None):
+        super(InvalidResponse, self).__init__(-101, message, data)
+
 
 class Request(object):
     """
@@ -117,26 +122,54 @@ class Request(object):
         return json.dumps(msg)
 
     @staticmethod
+    def valid_request(msg):
+        if isinstance(msg, Request):
+            return True
+
+        if isinstance(msg, (str, unicode)):
+            try:
+                msg = json.loads(msg)
+            except ValueError, e:
+                return False
+
+        if msg.get('jsonrpc', None) != '2.0':
+            return False
+
+        if msg.has_key('id') and msg['id'] is None:
+            return False
+
+        if not msg.has_key('method'):
+            return False
+
+        return True
+
+
+
+    @staticmethod
     def decode(msg):
         """
             parse a request
         """
         if isinstance(msg, Request):
             return msg
-        try:
-            if not isinstance(msg, dict):
+
+        if not isinstance(msg, dict):
+            try:
                 msg = json.loads(msg)
-            if msg.pop('jsonrpc', None) != '2.0':
-                raise InvalidRequest(message='Only JSON-RPC2.0 requests are accepted.')
-            if msg.has_key('id') and msg['id'] is None:
-                raise InvalidRequest(message='1.0 notification is not supported.')
-            return Request(**msg)
-        except ValueError, e:
-            # json.loads failed
-            raise ParseError()
-        except TypeError, e:
-            # parameters not match Request
+            except ValueError, e:
+                raise ParseError()
+
+        if msg.get('jsonrpc', None) != '2.0':
+            raise InvalidRequest(message='Only JSON-RPC2.0 requests are accepted.')
+        if msg.has_key('id') and msg['id'] is None:
+            raise InvalidRequest(message='1.0 notification is not supported.')
+
+        if not Request.valid_request(msg):
             raise InvalidRequest()
+
+        msg.pop('jsonrpc', None)
+
+        return Request(**msg)
 
     @staticmethod
     def is_jsonrpc2_request(req):
@@ -156,8 +189,11 @@ class Response(object):
         JSON-RPC2 Response object.
     """
     def __init__(self, id, result=None, error=None):
+        """
+            if no result and error, then the result is None.
+        """
         # either 'result' or 'error' MUST be included, but not both.
-        assert (result is None and error is not None) or (result is not None and error is None)
+        # assert (result is None and error is not None) or (result is not None and error is None)
         self.jsonrpc = '2.0'    # MUST
         self.id = id
         self.result = result
@@ -169,12 +205,41 @@ class Response(object):
 
     def encode(self):
         msg = {'id': self.id, 'jsonrpc': self.jsonrpc}
-        if self.result is not None:
-            msg['result'] = self.result
-        elif self.error is not None:
+
+        if self.error is not None:
             msg['error'] = self.error.encode()
+        else:
+            msg['result'] = self.result # may be None
 
         return json.dumps(msg)
+
+    @staticmethod
+    def valid_response(msg):
+        if isinstance(msg, Response):
+            return True
+
+        if isinstance(msg, (str, unicode)):
+            try:
+                msg = json.loads(msg)
+            except ValueError, e:
+                return False
+
+        if msg.get('jsonrpc', None) != '2.0':
+            return False
+
+        # here, msg is a dict
+        if not msg.has_key('id'):
+            return False
+
+        if msg.has_key('result') and msg.has_key('error'):
+            return False
+
+        if not (msg.has_key('result') or msg.has_key('error')):
+            return False
+
+        return True
+
+
 
     @staticmethod
     def decode(msg):
@@ -182,9 +247,16 @@ class Response(object):
             return msg
 
         if isinstance(msg, (str, unicode)):
-            msg = json.loads(msg)
+            try:
+                msg = json.loads(msg)
+            except ValueError, e:
+                raise ParseError()
 
-        assert msg.pop('jsonrpc', None) == '2.0'
+        if not Response.valid_response(msg):
+            raise InvalidResponse()
+
+        msg.pop('jsonrpc', None)
+
         return Response(**msg)
 
 
@@ -192,8 +264,9 @@ class JSONRPC2Handler(object):
     """
         handle a JSON-RPC2 request.
     """
-    def __init__(self, introspected=True):
+    def __init__(self, introspected=True, logger=None):
         self._methods = {}
+        self._logger = None
         if introspected:
             self.register_introspection_functions()
 
@@ -233,7 +306,7 @@ class JSONRPC2Handler(object):
             return func
         return decorator
 
-    def make_response(self, req_id, content):
+    def make_response(self, req_id, content=None):
         """
             input:
                 req_id -> request id, could be None if failed to dectect id in request.
@@ -282,14 +355,19 @@ class JSONRPC2Handler(object):
                     return self.make_response(req_id, result).encode()
             except TypeError, e:
                 # parameters don't match function
+                if self._logger:
+                    self._logger(traceback.format_exc())
                 raise InvalidParams(message="parameter - %s not match %s" % (json.dumps(params), req.method))
-            # except Exception, e:
-            #     raise InternalError(message="Internal Error.", data={'traceback': traceback.format_exc()})
 
         except Error, e:
             return self.make_response(req_id, e).encode()
 
         except Exception, e:
+            if self._logger:
+                self._logger(traceback.format_exc())
+            else:
+                print 'dump error:'
+                print traceback.format_exc()
             return self.make_response(
                     req_id,
                     InternalError(message='InternalError', data={'traceback': traceback.format_exc()})

@@ -102,7 +102,8 @@ class RPCClient(object):
                 assert resp.id == req.id
                 return resp
         else:
-            raise zmq.ZMQError(errno=zmq.EAGAIN, msg='timeout when receiving response.')
+            # raise zmq.ZMQError(errno=zmq.EAGAIN, msg='timeout when receiving response.')
+            raise zmq.ZMQError(zmq.EAGAIN)
 
 
     # def __call__(self, method, *args, **kwargs):
