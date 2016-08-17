@@ -1,6 +1,8 @@
 # -*- coding:utf-8 -*-
 
 import zmq
+import uuid
+from collections import deque
 
 from .thread_util import threaded
 from .jsonrpc2 import (
@@ -321,6 +323,266 @@ class LBServer(object):
         self.close()
 
 
+class Queue(object):
+    def __init__(self, iterable=(), maxlen=None):
+        self._que = deque(iterable)
+        self._maxlen = maxlen
+
+    def append(self, v):
+        """
+            return:
+                True -> succeed
+                False -> queue is full.
+        """
+        if len(self._que) < self._maxlen:
+            self._que.appendleft(v)
+            return True
+        return False
+
+    def pop(self):
+        return self._que.pop()
+
+    def empty(self):
+        return len(self._que) == 0
+
+    def clear(self):
+        self._que.clear()
+
+
+def gen_uuid():
+    return uuid.uuid1().get_hex()
+
+
+class LBServer2(object):
+    """
+        zmq server, with load balancing.
+        pattern:
+            client(REQ) <--> broker(ROUTER, DEALER) <--> worker(REP)
+    """
+
+    # stat machine
+    STAT_RUNNING = 'running'    # broker, workers threads are running
+    STAT_TERMINATING = 'terminating'    # doing terminate running threads
+    STAT_READY = 'ready'        # no running threads, but can be run
+    STAT_CLOSED = 'closed'      # no running threads, cannot be run
+
+    # control message
+    CTL_MSG_WREADY = b'WREADY'
+
+    _backend_endpoint = 'inproc://zeromq_jsonrpc2_backend'
+
+
+    def __init__(self, endpoint=None, context=None, timeout=3000, workers=3):
+        """
+            endpoint: zmq endpoint.
+            context: instance of zmq.Context
+            timeout: 
+                time to wait a new msg (for both worker and broker).
+                None -> wait forever.
+        """
+
+        self._handlers = []             # message handlers
+        self._endpoints = set()     # bound endpoints
+        self._broker_task = None
+        self._worker_tasks = []
+
+        self._timeout = timeout
+        self._worker_num = workers
+
+        self._context = context or zmq.Context()
+        self._frontend = self._context.socket(zmq.ROUTER)
+        self._backend = self._context.socket(zmq.ROUTER)
+        self._backend.bind(self._backend_endpoint)
+        if endpoint:
+            self.bind(endpoint)
+
+        self._broker_poller = zmq.Poller()
+        self._broker_poller.register(self._frontend, zmq.POLLIN)
+        self._broker_poller.register(self._backend, zmq.POLLIN)
+
+        self._stat = self.STAT_READY
+
+
+    def bind(self, endpoint):
+        if endpoint not in self._endpoints:
+            self._frontend.bind(endpoint)
+            self._endpoints.add(endpoint)
+
+    def unbind(self, endpoint):
+        if endpoint in self._endpoints:
+            self._frontend.unbind(endpoint)
+            self._endpoints.remove(endpoint)
+
+    def add_handler(self, handler):
+        """
+            add a msg handler.
+            format: 
+                handler(msg) -> should return a raw message (string).
+                if handler return None -> not handled -> to next handler
+        """
+        self._handlers.append(handler)
+
+    def handle_one_request(self, msg):
+        """
+            apply msg to every handlers until got one result (not None).
+            output:
+                result(not None) -> result of msg handler
+                None -> not proper handler found
+        """
+        for handler in self._handlers:
+            result = handler(msg)
+            if result is not None:
+                return result
+
+        return None
+
+    @threaded(name='broker', start=True, daemon=True)
+    def run_broker(self):
+        """
+            forward messages between workers and clients.
+        """
+        que_len = self._worker_num * 2
+        req_que = Queue(maxlen=que_len)
+        idle_workers = []
+        while self._stat == self.STAT_RUNNING:
+            socks = dict(self._broker_poller.poll(self._timeout))
+
+            if socks.get(self._backend, None) == zmq.POLLIN:
+                resp_msg = self._backend.recv_multipart()
+                wid, _, msg = resp_msg[:3]
+
+                idle_workers.append(wid)
+                if msg != self.CTL_MSG_WREADY and len(resp_msg) > 3:
+                    # response
+                    cid = msg
+                    _, resp = resp_msg[3:]
+                    self._frontend.send_multipart([cid, b'', resp])
+
+            if socks.get(self._frontend, None) == zmq.POLLIN:
+                req_msg = self._frontend.recv_multipart()
+                if not req_que.append(req_msg):
+                    pass
+                    print 'request queue is full, drop request from %s' % req_msg[0]
+
+            while (not req_que.empty()) and idle_workers:
+                cid, _, req = req_que.pop()
+                wid = idle_workers.pop(0)
+                self._backend.send_multipart([wid, b'', cid, b'', req])
+
+
+                # self._backend.send_multipart(msg)
+
+
+    @threaded(name='worker', start=True, daemon=True)
+    def run_worker(self, ident=None):
+        """
+            handle messages
+        """
+        worker_socket = self._context.socket(zmq.REQ)
+        worker_socket.identity = ident or gen_uuid()
+        worker_socket.connect(self._backend_endpoint)
+
+        # inform broker of worker being ready
+        worker_socket.send(self.CTL_MSG_WREADY)
+
+        while self._stat == self.STAT_RUNNING:
+            if worker_socket.poll(self._timeout, zmq.POLLIN) == zmq.POLLIN:
+                addr, _, msg = worker_socket.recv_multipart()
+                result = self.handle_one_request(msg)
+                if result is None:
+                    result = 'no proper handler for incoming message.'
+                worker_socket.send_multipart([addr, b'', result])
+
+        worker_socket.close()
+
+
+    def start(self):
+        assert self._stat == self.STAT_READY, 'cannot run in state: %s' % self._stat
+        assert len(self._endpoints) > 0, 'no bound endpoint(s).'
+
+        self._stat = self.STAT_RUNNING
+
+        self._broker_task = self.run_broker()
+        for i in xrange(self._worker_num):
+            self._worker_tasks.append(self.run_worker())
+
+
+    # def run(self):
+    #     assert self._stat == self.STAT_READY, 'cannot run in state: %s' % self._stat
+    #     assert len(self._endpoints) > 0, 'no bound endpoint(s).'
+
+    #     self._stat = self.STAT_RUNNING
+    #     for i in xrange(self._worker_num):
+    #         self._worker_tasks.append(self.run_worker())
+
+    #     try:
+    #         while self._stat == self.STAT_RUNNING:
+    #             socks = dict(self._broker_poller.poll(self._timeout))
+
+    #             if socks.get(self._frontend, None) == zmq.POLLIN:
+    #                 msg = self._frontend.recv_multipart()
+    #                 self._backend.send_multipart(msg)
+
+    #             if socks.get(self._backend, None) == zmq.POLLIN:
+    #                 msg = self._backend.recv_multipart()
+    #                 self._frontend.send_multipart(msg)
+    #     except KeyboardInterrupt, e:
+    #         self._stat = self.STAT_TERMINATING
+    #         for worker_task in self._worker_tasks:
+    #             worker_task.join()
+    #         self._worker_tasks = []
+    #         self._stat = self.STAT_READY
+
+
+    def terminate(self):
+        if self._stat == self.STAT_RUNNING:
+            self._stat = self.STAT_TERMINATING
+
+            self._broker_task.join()
+            self._broker_task = None
+
+            for worker_task in self._worker_tasks:
+                worker_task.join()
+            self._worker_tasks = []
+
+            self._stat = self.STAT_READY
+
+
+    def close(self):
+        if getattr(self, '_stat', None) != self.STAT_CLOSED:
+            self.terminate()
+            self._backend.close()
+            self._frontend.close()
+            self._stat = self.STAT_CLOSED
+
+
+    # expose state
+    @property
+    def closed(self):
+        return self._stat == self.STAT_CLOSED
+
+    @property
+    def ready(self):
+        return self._stat == self.STAT_READY
+
+    @property
+    def running(self):
+        return self._stat == self.STAT_RUNNING
+
+    @property
+    def terminating(self):
+        return self._stat == self.STAT_TERMINATING
+
+    def __enter__(self):
+        assert self._stat == self.STAT_READY
+
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def __del__(self):
+        self.close()
 
 class RPCServer(Server):
     """
