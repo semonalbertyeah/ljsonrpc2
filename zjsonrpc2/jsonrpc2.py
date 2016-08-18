@@ -264,9 +264,10 @@ class JSONRPC2Handler(object):
     """
         handle a JSON-RPC2 request.
     """
-    def __init__(self, introspected=True, logger=None):
+    def __init__(self, introspected=True, log_info=None, log_err=None):
         self._methods = {}
-        self._logger = None
+        self._log_info = log_info
+        self._log_err = log_err
         if introspected:
             self.register_introspection_functions()
 
@@ -290,6 +291,21 @@ class JSONRPC2Handler(object):
                 'list_methods': self.list_methods,
                 'method_doc': self.method_doc
             })
+
+
+    def log_info(self, *msg):
+        msg = ''.join(msg)
+        if self._log_info:
+            self._log_info(msg)
+
+
+    def log_err(self, *msg):
+        msg = ''.join(msg)
+        if self._log_err:
+            self._log_err(msg)
+        else:
+            print msg   # error message must be shown
+
 
     def register_function(self, func, name=None):
         assert callable(func)
@@ -355,19 +371,14 @@ class JSONRPC2Handler(object):
                     return self.make_response(req_id, result).encode()
             except TypeError, e:
                 # parameters don't match function
-                if self._logger:
-                    self._logger(traceback.format_exc())
+                self.log_err('RPC Handle ERROR:\n', traceback.format_exc())
                 raise InvalidParams(message="parameter - %s not match %s" % (json.dumps(params), req.method))
 
         except Error, e:
             return self.make_response(req_id, e).encode()
 
         except Exception, e:
-            if self._logger:
-                self._logger(traceback.format_exc())
-            else:
-                print 'dump error:'
-                print traceback.format_exc()
+            self.log_err(traceback.format_exc())
             return self.make_response(
                     req_id,
                     InternalError(message='InternalError', data={'traceback': traceback.format_exc()})

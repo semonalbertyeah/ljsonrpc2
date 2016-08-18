@@ -106,31 +106,19 @@ class RPCClient(object):
             raise zmq.ZMQError(zmq.EAGAIN)
 
 
-    # def __call__(self, method, *args, **kwargs):
-    #     """
-    #         call RPC on remote Server.
-    #         return:
-    #             RPC result
-    #     """
-    #     if args:
-    #         params = list(args)
-    #     elif kwargs:
-    #         params = kwargs
-    #     else:
-    #         params = None
-    #     return Request(method, params=params, id=Request.generate_id()).encode()
+    def __call__(self, method, *args, **kwargs):
+        """
+            call RPC on remote Server.
+            return:
+                RPC result
+        """
+        rpc = getattr(self, method)(*args, **kwargs)
 
-    # def notify(self, method, *args, **kwargs):
-    #     """
-    #         call RPC on remote server, without returned value.
-    #     """
-    #     if args:
-    #         params = list(args)
-    #     elif kwargs:
-    #         params = kwargs
-    #     else:
-    #         params = None
-    #     return Request(method, params=params, id=None).encode()
+    def notify(self, method, *args, **kwargs):
+        """
+            call RPC on remote server, without returned value.
+        """
+        rpc = getattr(self, method).notify(*args, **kwargs)
 
     def __getattr__(self, method):
         """

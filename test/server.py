@@ -5,11 +5,23 @@ import os, sys, time
 module_path = os.path.dirname(os.path.abspath('.'))
 sys.path.append(module_path)
 
-from zjsonrpc2 import LBRPCServer 
+from zjsonrpc2 import RPCServer
 
+def tprint(msg):
+    if not (msg.endswith('\n') or msg.endswith('\r')):
+        msg = msg + '\n'
+    sys.stdout.write(msg)
+    sys.stdout.flush()
+
+def log_err(msg):
+    tprint('---- err ----')
+    tprint(msg)
+
+def log_info(msg):
+    tprint(msg)
 
 def get_server():
-    server = LBRPCServer('tcp://*:9999', timeout=3000)
+    server = RPCServer('tcp://*:9999', timeout=3000, log_info=log_info, log_err=log_err)
 
     @server.procedure(name='test')
     def test_func():
@@ -33,4 +45,4 @@ if __name__ == '__main__':
             while True:
                 time.sleep(0.5)
     except KeyboardInterrupt, e:
-        print 'end'
+        print 'test end'
