@@ -399,8 +399,8 @@ class JSONRPC2Handler(object):
 
 
 
-if __name__ == '__main__':
-    req = Request('list_methods', id=1)
+# if __name__ == '__main__':
+#     req = Request('list_methods', id=1)
 
-    rpc = JSONRPC2Handler()
-    print rpc(req.encode())
+#     rpc = JSONRPC2Handler()
+#     print rpc(req.encode())

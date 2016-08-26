@@ -273,7 +273,7 @@ class LBServer(object):
                 if socks.get(self._frontend, None) == zmq.POLLIN:
                     req_msg = self._frontend.recv_multipart()
                     if not req_que.append(req_msg):
-                        self.log_info('request queue is full, drop request from %s' % req_msg[0])
+                        self.log_info('request queue is full, drop request from %s' % repr(req_msg[0]))
 
                 while (not req_que.empty()) and idle_workers:
                     cid, _, req = req_que.pop()
