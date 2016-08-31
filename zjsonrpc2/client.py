@@ -54,6 +54,7 @@ class RPCClient(object):
         self._timeout = timeout
         self._context = context or zmq.Context.instance()
         self._sock = self._context.socket(zmq.REQ)
+        self._sock.linger = 0
         if endpoint:
             self.connect(endpoint)
 
