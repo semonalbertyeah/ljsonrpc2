@@ -1,10 +1,14 @@
 # A light-weight JSON-RPC2 implementation.
 
-# Usage:
+### Features:
+1. Load balancing.
+
+### Usage:
 
 server.py
 
 ```python
+import time
 from zjsonrpc2 import RPCServer
 
 server = RPCServer('tcp://*:9999')
@@ -20,6 +24,13 @@ def test_exc():
 @server.procedure()
 def echo(*args, **kwargs):
     return 'echoed: %s, %s' % (repr(args), repr(kwargs))
+
+try:
+    server.start()
+    while True:
+        time.sleep(0.5)
+except KeyboardInterrupt as e:
+    print 'end.'
 ```
 
 client.py
