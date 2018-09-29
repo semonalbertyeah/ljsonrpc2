@@ -1,8 +1,5 @@
 # A light-weight JSON-RPC2 implementation.
 
-### Features:
-1. Load balancing.
-
 ### Usage:
 
 server.py
